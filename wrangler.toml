@@ -1,0 +1,26 @@
+name = "bible-mcp-server"
+main = "src/index.ts"
+compatibility_date = "2024-08-19"
+
+[env.production.vars]
+# These environment variables can be configured by users
+# BIBLE_API_KEY = "your-bible-api-key-here"
+# BIBLE_ID = "de4e12af7f28f599-02"  # King James Version
+# BASE_URL = "https://api.scripture.api.bible/v1"
+
+# Example configuration for different environments
+[env.staging.vars]
+# BIBLE_API_KEY = "your-staging-api-key"
+# BIBLE_ID = "06125adad2d5898a-01"  # New International Version
+# BASE_URL = "https://api.scripture.api.bible/v1"
+
+# You can set these variables using wrangler secrets:
+# wrangler secret put BIBLE_API_KEY
+# wrangler secret put BIBLE_ID
+# wrangler secret put BASE_URL
+
+# Common Bible IDs:
+# de4e12af7f28f599-02 - King James Version (KJV)
+# 06125adad2d5898a-01 - New International Version (NIV)
+# f72b840c855f362c-04 - English Standard Version (ESV)
+# 592420522e16049f-01 - New American Standard Bible (NASB)

@@ -1,0 +1,20 @@
+{
+  "name": "bible-mcp-server",
+  "version": "1.0.0",
+  "description": "Bible MCP Server for Cloudflare Workers - provides Bible search and verse retrieval tools",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["bible", "mcp", "cloudflare", "workers", "api"],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20250823.0",
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "wrangler": "^4.32.0"
+  }
+}
