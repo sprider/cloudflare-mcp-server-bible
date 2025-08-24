@@ -2,171 +2,142 @@
 
 A Model Context Protocol (MCP) server that provides Bible search and verse retrieval tools, deployed on Cloudflare Workers. This server uses the Scripture API Bible service to provide access to various Bible translations.
 
-## Features
+## Quick Start
 
-- **Search Verses**: Search for Bible verses containing specific text
-- **Get Verse**: Retrieve specific Bible verses (e.g., GEN.1.1)
-- **Get Passage**: Get Bible passages (e.g., GEN.1.1-GEN.1.5)
-- **Get Chapter**: Get all verses from a specific chapter
-- **List Books**: Get a list of all Bible books with their IDs
-- **List Chapters**: Get a list of chapters for a specific book
-
-## Configuration
-
-This server is designed to be publicly deployable with user-configurable settings.
-
-### Getting a Bible API Key
-
+### 1. Get API Key
 1. Go to [https://scripture.api.bible/](https://scripture.api.bible/)
 2. Sign up for a free account
 3. Get your API key from the dashboard
 
-### Environment Variables
-
-Copy `.env.example` to `.env` and configure your settings:
-
+### 2. Deploy to Cloudflare
 ```bash
-cp .env.example .env
-```
-
-Available configuration options:
-
-- `BIBLE_API_KEY`: **Required** - Your Scripture API Bible API key
-- `BIBLE_ID`: Bible translation ID (default: "de4e12af7f28f599-02" for KJV)
-- `BASE_URL`: Scripture API base URL (default: "https://api.scripture.api.bible/v1")
-
-### For Production Deployment
-
-Use Wrangler secrets to securely set environment variables:
-
-```bash
-# Set the Bible API key
-wrangler secret put BIBLE_API_KEY
-
-# Set default Bible version
-wrangler secret put BIBLE_VERSION
-
-# Set default language
-wrangler secret put BIBLE_LANGUAGE
-```
-
-## Installation
-
-1. Install dependencies:
-```bash
+# Install dependencies
 npm install
+
+# Login to Cloudflare
+npx wrangler login
+
+# Set your API credentials (you'll be prompted to enter them securely)
+npx wrangler secret put BIBLE_API_KEY
+npx wrangler secret put BIBLE_ID
+npx wrangler secret put BASE_URL
+
+# Deploy to Cloudflare Workers
+npx wrangler deploy
 ```
 
-2. Configure your environment variables (see Configuration section above)
+**When prompted for secrets, enter:**
+- **BIBLE_API_KEY**: Your API key from scripture.api.bible
+- **BIBLE_ID**: `de4e12af7f28f599-02` (King James Version)
+- **BASE_URL**: `https://api.scripture.api.bible/v1`
 
-3. Test locally:
+### 3. Test Your Deployment
 ```bash
-npm run dev
+# Test health endpoint
+curl https://your-worker-domain.workers.dev/health
+
+# Should return: OK
 ```
 
-4. Deploy to Cloudflare Workers:
-```bash
-npm run deploy
-```
+## Available Bible Tools
 
-## Usage
+Your MCP server provides these tools:
 
-Once deployed, your MCP server will be available at your Cloudflare Workers domain.
+1. **search_verses** - Search for Bible verses containing specific text
+2. **get_verse** - Get a specific Bible verse (e.g., GEN.1.1)  
+3. **get_passage** - Get Bible passages (e.g., GEN.1.1-GEN.1.5)
+4. **get_chapter** - Get all verses from a specific chapter
+5. **list_books** - Get a list of all Bible books with their IDs
+6. **list_chapters** - Get a list of chapters for a specific book
 
-### Available Bible Translations
+## Common Bible Translations
 
-Common Bible IDs you can use:
+You can use these Bible IDs:
 - `de4e12af7f28f599-02` - King James Version (KJV)
 - `06125adad2d5898a-01` - New International Version (NIV)
 - `f72b840c855f362c-04` - English Standard Version (ESV)
 - `592420522e16049f-01` - New American Standard Bible (NASB)
 
-### Available Tools
+## For Development
 
-1. **search_verses**
-   - Search for Bible verses containing specific text
-   - Parameters: `query` (required), `limit` (optional, 1-200, default: 10)
+```bash
+# Start local development server
+npm run dev
 
-2. **get_verse**
-   - Get a specific Bible verse
-   - Parameters: `verse_id` (required, e.g., "GEN.1.1"), `include_verse_numbers` (optional, default: true)
+# Deploy changes
+npm run deploy
+```
 
-3. **get_passage**
-   - Get a passage of Bible verses
-   - Parameters: `passage_id` (required, e.g., "GEN.1.1-GEN.1.5"), `include_verse_numbers` (optional, default: true)
+## Troubleshooting
 
-4. **get_chapter**
-   - Get all verses from a specific chapter
-   - Parameters: `book_id` (required, e.g., "GEN"), `chapter` (required, number)
+1. **Authentication Error**: Make sure you've run `npx wrangler login`
+2. **API Key Issues**: Verify your Scripture API key is valid and set correctly
+3. **Deployment Failed**: Check you have the correct permissions in Cloudflare
 
-5. **list_books**
-   - Get a list of all books in the Bible
+## Using Your MCP Server
 
-6. **list_chapters**
-   - Get a list of chapters for a specific book
-   - Parameters: `book_id` (required, e.g., "GEN")
+Once deployed, you can use your Bible MCP server in two ways:
 
-### Example API Calls
+### Option 1: Claude Desktop (Recommended)
 
-```javascript
-// Search for verses containing "love"
+Add this configuration to your Claude Desktop MCP settings:
+
+1. Open **Claude Desktop**
+2. Go to **Settings** → **Developer** → **Edit Config**
+3. Add this configuration:
+
+```json
 {
-  "method": "tools/call",
-  "params": {
-    "name": "search_verses",
-    "arguments": {
-      "query": "love",
-      "limit": 5
-    }
-  }
-}
-
-// Get Genesis 1:1
-{
-  "method": "tools/call",
-  "params": {
-    "name": "get_verse",
-    "arguments": {
-      "verse_id": "GEN.1.1"
-    }
-  }
-}
-
-// Get Genesis 1:1-5 passage
-{
-  "method": "tools/call",
-  "params": {
-    "name": "get_passage",
-    "arguments": {
-      "passage_id": "GEN.1.1-GEN.1.5"
+  "mcpServers": {
+    "bible": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://your-worker-domain.workers.dev/sse"]
     }
   }
 }
 ```
 
-## Development
+4. **Install mcp-remote** (first time only):
+```bash
+npm install -g mcp-remote
+```
 
-- `npm run dev`: Start local development server
-- `npm run deploy`: Deploy to Cloudflare Workers
+5. **Restart Claude Desktop**
+
+You can now ask Claude to search Bible verses, get specific passages, or explore different books!
+
+**Example prompts to try:**
+- "Search for Bible verses about love"
+- "Get me Genesis 1:1"
+- "Show me the entire first chapter of John"
+- "List all the books in the Bible"
+- "What verses are in Psalm 23?"
+
+### Option 2: Cloudflare AI Playground
+
+Visit [https://playground.ai.cloudflare.com/](https://playground.ai.cloudflare.com/) and connect to:
+```
+https://your-worker-domain.workers.dev/sse
+```
+
+## What's Deployed
+
+Your Cloudflare Worker provides:
+- **Health Check**: `https://your-domain.workers.dev/health`
+- **MCP SSE Endpoint**: `https://your-domain.workers.dev/sse` (GET for SSE, POST for JSON-RPC)
+- **Main Page**: `https://your-domain.workers.dev/` (info page)
+
+## Troubleshooting
+
+1. **Authentication Error**: Make sure you've run `npx wrangler login`
+2. **API Key Issues**: Verify your Scripture API key is valid and set correctly
+3. **Deployment Failed**: Check you have the correct permissions in Cloudflare
+4. **Claude Desktop Connection Issues**: 
+   - Make sure `mcp-remote` is installed globally: `npm install -g mcp-remote`
+   - Restart Claude Desktop after adding the configuration
+   - Check that your worker URL is correct in the config
+5. **MCP Tools Not Appearing**: Verify your API credentials are set correctly using `npx wrangler secret list`
 
 ## License
 
 MIT
-
-## Contributing
-
-This is a public MCP server. Feel free to contribute improvements, additional Bible APIs integration, or new features.
-
-## Notes
-
-- This implementation uses the Scripture API Bible service, which provides access to many Bible translations
-- The server requires a valid API key from [scripture.api.bible](https://scripture.api.bible/)
-- All the MCP tools match the functionality of the original Python server
-- The server supports all the same Bible operations: search, verses, passages, chapters, books, and chapter listings
-
-## API Reference
-
-For more information about available Bible translations and API capabilities, visit:
-
-- [Scripture API Bible Documentation](https://scripture.api.bible/livedocs)
-- [Available Bible Translations](https://scripture.api.bible/)

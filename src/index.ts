@@ -31,10 +31,12 @@ export default {
     // Handle CORS preflight requests
     if (request.method === "OPTIONS") {
       return new Response(null, {
+        status: 200,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With",
+          "Access-Control-Max-Age": "86400",
         },
       });
     }
@@ -48,8 +50,13 @@ export default {
       });
     }
     
-    if (url.pathname === "/sse" && request.method === "POST") {
-      return handleMCP(request, env);
+    // Handle MCP requests on /sse endpoint
+    if (url.pathname === "/sse") {
+      if (request.method === "GET") {
+        return handleSSE(request, env);
+      } else if (request.method === "POST") {
+        return handleMCP(request, env);
+      }
     }
     
     return new Response("Bible MCP Server - Cloudflare Worker", { 
@@ -178,176 +185,270 @@ function extractTextFromContent(contentItems: ContentItem[]): string {
   return textParts.join("").trim();
 }
 
+async function handleSSE(request: Request, env: Env): Promise<Response> {
+  // Create a proper SSE stream for MCP over SSE
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  
+  // Handle the SSE connection
+  const handleConnection = async () => {
+    try {
+      // According to MCP spec, SSE should establish connection and wait for messages
+      // Don't send anything initially - the client will send requests via a separate channel
+      
+      // Keep the connection alive with periodic comments (SSE spec)
+      const keepAlive = setInterval(async () => {
+        try {
+          await writer.write(encoder.encode(": keepalive\n\n"));
+        } catch (e) {
+          clearInterval(keepAlive);
+        }
+      }, 30000);
+      
+      // Clean up on abort
+      request.signal?.addEventListener('abort', () => {
+        clearInterval(keepAlive);
+        writer.close();
+      });
+      
+    } catch (error) {
+      writer.close();
+    }
+  };
+  
+  handleConnection();
+  
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With",
+    },
+  });
+}
+
 async function handleMCP(request: Request, env: Env): Promise<Response> {
   try {
+    const body = await request.json() as any;
+    
+    // Handle empty body or invalid JSON
+    if (!body) {
+      return createErrorResponse(null, -32700, "Parse error: empty request body");
+    }
+
+    // Validate JSON-RPC format - but be more lenient for testing
+    if (body.jsonrpc && body.jsonrpc !== "2.0") {
+      return createErrorResponse(body.id, -32600, "Invalid Request: invalid jsonrpc version");
+    }
+
+    // Set default jsonrpc if missing
+    if (!body.jsonrpc) {
+      body.jsonrpc = "2.0";
+    }
+
+    if (!body.method) {
+      return createErrorResponse(body.id, -32600, "Invalid Request: missing method");
+    }
+
     const bibleClient = new BibleAPIClient(env);
     
-    const server = new Server(
-      {
-        name: "bible-server",
-        version: "1.0.0",
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
+    // Handle different MCP methods
+    switch (body.method) {
+      case "initialize":
+        return createSuccessResponse(body.id, {
+          protocolVersion: "2024-11-05",
+          capabilities: {
+            tools: {},
+          },
+          serverInfo: {
+            name: "bible-server",
+            version: "1.0.0",
+          },
+        });
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: "search_verses",
-            description: "Search for Bible verses containing specific text",
-            inputSchema: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "Text to search for in Bible verses",
-                },
-                limit: {
-                  type: "number",
-                  description: "Maximum number of results to return (1-200)",
-                  default: 10,
-                },
-              },
-              required: ["query"],
-            },
-          },
-          {
-            name: "get_verse",
-            description: "Get a specific Bible verse",
-            inputSchema: {
-              type: "object",
-              properties: {
-                verse_id: {
-                  type: "string",
-                  description: "Verse ID in format BOOK.CHAPTER.VERSE (e.g., GEN.1.1)",
-                },
-                include_verse_numbers: {
-                  type: "boolean",
-                  description: "Include verse numbers in the output",
-                  default: true,
-                },
-              },
-              required: ["verse_id"],
-            },
-          },
-          {
-            name: "get_passage",
-            description: "Get a passage of Bible verses",
-            inputSchema: {
-              type: "object",
-              properties: {
-                passage_id: {
-                  type: "string",
-                  description: "Passage ID in format BOOK.CHAPTER.START_VERSE-BOOK.CHAPTER.END_VERSE (e.g., GEN.1.1-GEN.1.5)",
-                },
-                include_verse_numbers: {
-                  type: "boolean",
-                  description: "Include verse numbers in the output",
-                  default: true,
-                },
-              },
-              required: ["passage_id"],
-            },
-          },
-          {
-            name: "get_chapter",
-            description: "Get all verses from a specific chapter",
-            inputSchema: {
-              type: "object",
-              properties: {
-                book_id: {
-                  type: "string",
-                  description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
-                },
-                chapter: {
-                  type: "number",
-                  description: "Chapter number",
-                },
-              },
-              required: ["book_id", "chapter"],
-            },
-          },
-          {
-            name: "list_books",
-            description: "Get a list of all books in the Bible",
-            inputSchema: {
-              type: "object",
-              properties: {},
-            },
-          },
-          {
-            name: "list_chapters",
-            description: "Get a list of chapters for a specific book",
-            inputSchema: {
-              type: "object",
-              properties: {
-                book_id: {
-                  type: "string",
-                  description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
-                },
-              },
-              required: ["book_id"],
-            },
-          },
-        ] as Tool[],
-      };
-    });
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-
-      try {
-        switch (name) {
-          case "search_verses":
-            return await searchVerses(args as any, bibleClient);
-          case "get_verse":
-            return await getVerse(args as any, bibleClient);
-          case "get_passage":
-            return await getPassage(args as any, bibleClient);
-          case "get_chapter":
-            return await getChapter(args as any, bibleClient);
-          case "list_books":
-            return await listBooks(bibleClient);
-          case "list_chapters":
-            return await listChapters(args as any, bibleClient);
-          default:
-            throw new Error(`Unknown tool: ${name}`);
-        }
-      } catch (error) {
-        return {
-          content: [
+      case "tools/list":
+        return createSuccessResponse(body.id, {
+          tools: [
             {
-              type: "text",
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              name: "search_verses",
+              description: "Search for Bible verses containing specific text",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "Text to search for in Bible verses",
+                  },
+                  limit: {
+                    type: "number",
+                    description: "Maximum number of results to return (1-200)",
+                    default: 10,
+                  },
+                },
+                required: ["query"],
+              },
+            },
+            {
+              name: "get_verse",
+              description: "Get a specific Bible verse",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  verse_id: {
+                    type: "string",
+                    description: "Verse ID in format BOOK.CHAPTER.VERSE (e.g., GEN.1.1)",
+                  },
+                  include_verse_numbers: {
+                    type: "boolean",
+                    description: "Include verse numbers in the output",
+                    default: true,
+                  },
+                },
+                required: ["verse_id"],
+              },
+            },
+            {
+              name: "get_passage",
+              description: "Get a passage of Bible verses",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  passage_id: {
+                    type: "string",
+                    description: "Passage ID in format BOOK.CHAPTER.START_VERSE-BOOK.CHAPTER.END_VERSE (e.g., GEN.1.1-GEN.1.5)",
+                  },
+                  include_verse_numbers: {
+                    type: "boolean",
+                    description: "Include verse numbers in the output",
+                    default: true,
+                  },
+                },
+                required: ["passage_id"],
+              },
+            },
+            {
+              name: "get_chapter",
+              description: "Get all verses from a specific chapter",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  book_id: {
+                    type: "string",
+                    description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
+                  },
+                  chapter: {
+                    type: "number",
+                    description: "Chapter number",
+                  },
+                },
+                required: ["book_id", "chapter"],
+              },
+            },
+            {
+              name: "list_books",
+              description: "Get a list of all books in the Bible",
+              inputSchema: {
+                type: "object",
+                properties: {},
+              },
+            },
+            {
+              name: "list_chapters",
+              description: "Get a list of chapters for a specific book",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  book_id: {
+                    type: "string",
+                    description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
+                  },
+                },
+                required: ["book_id"],
+              },
             },
           ],
-          isError: true,
-        };
-      }
-    });
+        });
 
-    return new Response(JSON.stringify({ status: "MCP Server initialized" }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+      case "tools/call":
+        const toolName = body.params?.name;
+        const toolArgs = body.params?.arguments || {};
+
+        try {
+          let result;
+          switch (toolName) {
+            case "search_verses":
+              result = await searchVerses(toolArgs, bibleClient);
+              break;
+            case "get_verse":
+              result = await getVerse(toolArgs, bibleClient);
+              break;
+            case "get_passage":
+              result = await getPassage(toolArgs, bibleClient);
+              break;
+            case "get_chapter":
+              result = await getChapter(toolArgs, bibleClient);
+              break;
+            case "list_books":
+              result = await listBooks(bibleClient);
+              break;
+            case "list_chapters":
+              result = await listChapters(toolArgs, bibleClient);
+              break;
+            default:
+              return createErrorResponse(body.id, -32601, `Unknown tool: ${toolName}`);
+          }
+          return createSuccessResponse(body.id, result);
+        } catch (error) {
+          return createErrorResponse(body.id, -32603, `Tool execution error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+      default:
+        return createErrorResponse(body.id, -32601, `Unknown method: ${body.method}`);
+    }
     
   } catch (error) {
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
-      status: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    return createErrorResponse(null, -32700, `Parse error: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function createSuccessResponse(id: any, result: any): Response {
+  return new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: id,
+    result: result,
+  }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With",
+    },
+  });
+}
+
+function createErrorResponse(id: any, code: number, message: string): Response {
+  return new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: id,
+    error: {
+      code: code,
+      message: message,
+    },
+  }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With",
+    },
+  });
 }
 
 async function searchVerses(
