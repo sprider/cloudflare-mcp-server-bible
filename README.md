@@ -76,17 +76,12 @@ npm run deploy
 
 ## Using Your MCP Server
 
-Once deployed, you can use your Bible MCP server in two ways:
-
-### Option 1: Claude Desktop (Recommended)
+### Claude Desktop 
 
 Add this configuration to your Claude Desktop MCP settings:
 
 1. Open **Claude Desktop**
 2. Go to **Settings** → **Developer** → **Edit Config**
-
-![Claude Desktop Settings](media/3-mcp-claude-dev-settings.png)
-
 3. Add this configuration to the config file:
 
 ```json
@@ -100,8 +95,6 @@ Add this configuration to your Claude Desktop MCP settings:
 }
 ```
 
-![Claude Desktop Config File](media/1-mcp-config-file.png)
-
 4. **Install mcp-remote** (first time only):
 ```bash
 npm install -g mcp-remote
@@ -109,31 +102,26 @@ npm install -g mcp-remote
 
 5. **Restart Claude Desktop**
 
-After restarting, you'll see the Bible connector available in Claude's menu:
+After restarting, you'll see the Bible connector available in Claude's settings and chat menu:
+
+![Claude Desktop Settings](media/3-mcp-claude-dev-settings.png)
 
 ![Bible Connector Available](media/6a-mcp-claude-in-action.png)
 
 You can now ask Claude to search Bible verses, get specific passages, or explore different books!
 
 **Example prompts to try:**
-- "Search for Bible verses about love"
+
+- "How did Jesus feed 5,000 people?"
 - "Get me Genesis 1:1"
-- "Show me the entire first chapter of John"
-- "List all the books in the Bible"
 - "What verses are in Psalm 23?"
 
 ![Bible Server in Action](media/6b-mcp-claude-in-action.png)
 
-### Option 2: Cloudflare AI Playground
-
-Visit [https://playground.ai.cloudflare.com/](https://playground.ai.cloudflare.com/) and connect to:
-```
-https://your-worker-domain.workers.dev/sse
-```
-
 ## What's Deployed
 
 Your Cloudflare Worker provides:
+
 - **Health Check**: `https://your-domain.workers.dev/health`
 - **MCP SSE Endpoint**: `https://your-domain.workers.dev/sse` (GET for SSE, POST for JSON-RPC)
 - **Main Page**: `https://your-domain.workers.dev/` (info page)
