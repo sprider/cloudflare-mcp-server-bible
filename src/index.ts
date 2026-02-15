@@ -1,11 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-  CallToolResult,
-} from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface Env {
   BIBLE_API_KEY?: string;
@@ -275,100 +268,76 @@ async function handleMCP(request: Request, env: Env): Promise<Response> {
         return createSuccessResponse(body.id, {
           tools: [
             {
-              name: "search_verses",
-              description: "Search for Bible verses containing specific text",
+              name: "bible_content",
+              title: "Bible Content",
+              description: "Read and search Bible verses. Actions: search - Find verses by text (requires query); verse - Single verse e.g. GEN.1.1 (requires verse_id); passage - Verse range e.g. GEN.1.1-GEN.1.5 (requires passage_id); chapter - Full chapter (requires book_id, chapter). Use concise (default) for summaries; use detailed for verse numbers and full context.",
               inputSchema: {
                 type: "object",
                 properties: {
+                  action: {
+                    type: "string",
+                    enum: ["search", "verse", "passage", "chapter"],
+                    description: "Action to perform",
+                  },
                   query: {
                     type: "string",
-                    description: "Text to search for in Bible verses",
+                    description: "Search query (required for search action)",
                   },
-                  limit: {
-                    type: "number",
-                    description: "Maximum number of results to return (1-200)",
-                    default: 10,
-                  },
-                },
-                required: ["query"],
-              },
-            },
-            {
-              name: "get_verse",
-              description: "Get a specific Bible verse",
-              inputSchema: {
-                type: "object",
-                properties: {
                   verse_id: {
                     type: "string",
-                    description: "Verse ID in format BOOK.CHAPTER.VERSE (e.g., GEN.1.1)",
+                    description: "Verse ID in format BOOK.CHAPTER.VERSE (e.g., GEN.1.1, JHN.3.16)",
                   },
-                  include_verse_numbers: {
-                    type: "boolean",
-                    description: "Include verse numbers in the output",
-                    default: true,
-                  },
-                },
-                required: ["verse_id"],
-              },
-            },
-            {
-              name: "get_passage",
-              description: "Get a passage of Bible verses",
-              inputSchema: {
-                type: "object",
-                properties: {
                   passage_id: {
                     type: "string",
-                    description: "Passage ID in format BOOK.CHAPTER.START_VERSE-BOOK.CHAPTER.END_VERSE (e.g., GEN.1.1-GEN.1.5)",
+                    description: "Passage ID e.g. GEN.1.1-GEN.1.5",
                   },
-                  include_verse_numbers: {
-                    type: "boolean",
-                    description: "Include verse numbers in the output",
-                    default: true,
-                  },
-                },
-                required: ["passage_id"],
-              },
-            },
-            {
-              name: "get_chapter",
-              description: "Get all verses from a specific chapter",
-              inputSchema: {
-                type: "object",
-                properties: {
                   book_id: {
                     type: "string",
                     description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
                   },
                   chapter: {
                     type: "number",
-                    description: "Chapter number",
+                    description: "Chapter number (required for chapter action)",
+                  },
+                  limit: {
+                    type: "number",
+                    description: "Max search results (1-200)",
+                    default: 10,
+                  },
+                  response_format: {
+                    type: "string",
+                    enum: ["concise", "detailed"],
+                    default: "concise",
+                    description: "concise = essential info only; detailed = full text with verse numbers",
                   },
                 },
-                required: ["book_id", "chapter"],
+                required: ["action"],
               },
             },
             {
-              name: "list_books",
-              description: "Get a list of all books in the Bible",
-              inputSchema: {
-                type: "object",
-                properties: {},
-              },
-            },
-            {
-              name: "list_chapters",
-              description: "Get a list of chapters for a specific book",
+              name: "bible_reference",
+              title: "Bible Reference",
+              description: "Navigate Bible structure. Actions: list_books - All books with names and abbreviations; list_chapters - Chapters for a book (requires book_id). Use concise for quick lookups; use detailed when you need book IDs for follow-up tool calls.",
               inputSchema: {
                 type: "object",
                 properties: {
+                  action: {
+                    type: "string",
+                    enum: ["list_books", "list_chapters"],
+                    description: "Action to perform",
+                  },
                   book_id: {
                     type: "string",
-                    description: "Book ID (e.g., GEN, EXO, MAT, JHN)",
+                    description: "Book ID (required for list_chapters, e.g., GEN, JHN)",
+                  },
+                  response_format: {
+                    type: "string",
+                    enum: ["concise", "detailed"],
+                    default: "concise",
+                    description: "concise = names/numbers only; detailed = includes IDs for follow-up calls",
                   },
                 },
-                required: ["book_id"],
+                required: ["action"],
               },
             },
           ],
@@ -380,27 +349,12 @@ async function handleMCP(request: Request, env: Env): Promise<Response> {
 
         try {
           let result;
-          switch (toolName) {
-            case "search_verses":
-              result = await searchVerses(toolArgs, bibleClient);
-              break;
-            case "get_verse":
-              result = await getVerse(toolArgs, bibleClient);
-              break;
-            case "get_passage":
-              result = await getPassage(toolArgs, bibleClient);
-              break;
-            case "get_chapter":
-              result = await getChapter(toolArgs, bibleClient);
-              break;
-            case "list_books":
-              result = await listBooks(bibleClient);
-              break;
-            case "list_chapters":
-              result = await listChapters(toolArgs, bibleClient);
-              break;
-            default:
-              return createErrorResponse(body.id, -32601, `Unknown tool: ${toolName}`);
+          if (toolName === "bible_content") {
+            result = await handleBibleContent(toolArgs, bibleClient);
+          } else if (toolName === "bible_reference") {
+            result = await handleBibleReference(toolArgs, bibleClient);
+          } else {
+            return createErrorResponse(body.id, -32601, `Unknown tool: ${toolName}`);
           }
           return createSuccessResponse(body.id, result);
         } catch (error) {
@@ -451,331 +405,208 @@ function createErrorResponse(id: any, code: number, message: string): Response {
   });
 }
 
-async function searchVerses(
-  args: { query: string; limit?: number },
-  client: BibleAPIClient
-): Promise<CallToolResult> {
-  const limit = args.limit || 10;
-  
-  if (limit < 1 || limit > 200) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Error: limit must be between 1 and 200",
-        },
-      ],
-      isError: true,
-    };
-  }
+const MAX_VERSE_LENGTH_CONCISE = 100;
 
-  try {
-    const result = await client.searchVerses(args.query, limit);
-    
-    if (!result.data?.verses) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `No verses found for query: '${args.query}'`,
-          },
-        ],
-      };
-    }
-
-    const verses = result.data.verses;
-    const total = result.data.total;
-    
-    let response = `Found ${total} verses for '${args.query}' (showing ${verses.length}):\n\n`;
-    
-    for (const verse of verses) {
-      response += `**${verse.reference}**\n${verse.text}\n\n`;
-    }
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response.trim(),
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error searching verses: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
-  }
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen).trim() + "...";
 }
 
-async function getVerse(
-  args: { verse_id: string; include_verse_numbers?: boolean },
+async function handleBibleContent(
+  args: {
+    action: string;
+    query?: string;
+    verse_id?: string;
+    passage_id?: string;
+    book_id?: string;
+    chapter?: number;
+    limit?: number;
+    response_format?: string;
+  },
   client: BibleAPIClient
 ): Promise<CallToolResult> {
+  const action = args.action;
+  const responseFormat = args.response_format || "concise";
+  const isDetailed = responseFormat === "detailed";
+
   try {
-    const params = {
-      "include-verse-numbers": (args.include_verse_numbers ?? true).toString(),
-    };
-    
-    const result = await client.getVerse(args.verse_id, params);
-    
-    if (!result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Verse not found: ${args.verse_id}`,
-          },
-        ],
-      };
-    }
-
-    const verseData = result.data;
-    const response = `**${verseData.reference}**\n${verseData.content.trim()}`;
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error getting verse: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function getPassage(
-  args: { passage_id: string; include_verse_numbers?: boolean },
-  client: BibleAPIClient
-): Promise<CallToolResult> {
-  try {
-    const includeVerseNumbers = args.include_verse_numbers ?? true;
-    const params = {
-      "include-verse-numbers": includeVerseNumbers.toString(),
-      "content-type": includeVerseNumbers ? "json" : "text",
-    };
-    
-    const result = await client.getPassage(args.passage_id, params);
-    
-    if (!result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Passage not found: ${args.passage_id}`,
-          },
-        ],
-      };
-    }
-
-    const passageData = result.data;
-    let content: string;
-    
-    if (params["content-type"] === "text") {
-      content = passageData.content.trim();
-    } else {
-      const contentItems = passageData.content || [];
-      content = extractTextFromContent(contentItems);
-    }
-    
-    const response = `**${passageData.reference}**\n${content}`;
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error getting passage: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function getChapter(
-  args: { book_id: string; chapter: number },
-  client: BibleAPIClient
-): Promise<CallToolResult> {
-  try {
-    const bookId = args.book_id.toUpperCase();
-    
-    // Get chapter info to determine verse range
-    const chaptersResult = await client.getChapters(bookId);
-    let chapterFound: any = null;
-    
-    for (const ch of chaptersResult.data || []) {
-      if (ch.number === args.chapter.toString()) {
-        chapterFound = ch;
-        break;
+    switch (action) {
+      case "search": {
+        if (!args.query) {
+          return toolError("search action requires query");
+        }
+        const limit = Math.min(Math.max(args.limit ?? 10, 1), 200);
+        const result = await client.searchVerses(args.query, limit);
+        if (!result.data?.verses) {
+          return toolResult(`No verses found for query: '${args.query}'`);
+        }
+        const verses = result.data.verses;
+        const total = result.data.total;
+        const maxResults = isDetailed ? verses.length : Math.min(5, verses.length);
+        let response = isDetailed
+          ? `Found ${total} verses for '${args.query}' (showing ${verses.length}):\n\n`
+          : `Found ${total} verses for '${args.query}' (top ${maxResults}):\n\n`;
+        for (let i = 0; i < maxResults; i++) {
+          const verse = verses[i];
+          const text = isDetailed ? verse.text : truncateText(verse.text, MAX_VERSE_LENGTH_CONCISE);
+          response += `**${verse.reference}**\n${text}\n\n`;
+        }
+        return toolResult(response.trim());
       }
+
+      case "verse": {
+        if (!args.verse_id) {
+          return toolError("verse action requires verse_id");
+        }
+        const params = {
+          "include-verse-numbers": isDetailed.toString(),
+        };
+        const result = await client.getVerse(args.verse_id, params);
+        if (!result.data) {
+          return toolResult(`Verse not found: ${args.verse_id}`);
+        }
+        const verseData = result.data;
+        return toolResult(`**${verseData.reference}**\n${verseData.content.trim()}`);
+      }
+
+      case "passage":
+      case "chapter": {
+        if (action === "passage") {
+          if (!args.passage_id) {
+            return toolError("passage action requires passage_id");
+          }
+          const params = {
+            "include-verse-numbers": isDetailed.toString(),
+            "content-type": isDetailed ? "json" : "text",
+          };
+          const result = await client.getPassage(args.passage_id, params);
+          if (!result.data) {
+            return toolResult(`Passage not found: ${args.passage_id}`);
+          }
+          const passageData = result.data;
+          let content: string;
+          if (params["content-type"] === "text") {
+            content = passageData.content.trim();
+          } else {
+            const contentItems = passageData.content || [];
+            content = extractTextFromContent(contentItems);
+          }
+          return toolResult(`**${passageData.reference}**\n${content}`);
+        } else {
+          if (!args.book_id || args.chapter == null) {
+            return toolError("chapter action requires book_id and chapter");
+          }
+          const bookId = args.book_id.toUpperCase();
+          const chaptersResult = await client.getChapters(bookId);
+          let chapterFound: any = null;
+          for (const ch of chaptersResult.data || []) {
+            if (ch.number === args.chapter.toString()) {
+              chapterFound = ch;
+              break;
+            }
+          }
+          if (!chapterFound) {
+            return toolResult(`Chapter ${args.chapter} not found in book ${bookId}`);
+          }
+          const chapterParams = {
+            "include-verse-numbers": isDetailed.toString(),
+            "content-type": isDetailed ? "json" : "text",
+          };
+          const result = await client.getPassage(chapterFound.id, chapterParams);
+          if (!result.data) {
+            return toolResult(`Chapter content not found: ${bookId} ${args.chapter}`);
+          }
+          const passageData = result.data;
+          let content: string;
+          if (chapterParams["content-type"] === "text") {
+            content = typeof passageData.content === "string" ? passageData.content.trim() : "";
+          } else {
+            const contentItems = passageData.content || [];
+            content = extractTextFromContent(Array.isArray(contentItems) ? contentItems : [contentItems]);
+          }
+          return toolResult(`**${passageData.reference}**\n${content}`);
+        }
+      }
+
+      default:
+        return toolError(`Unknown action: ${action}. Use search, verse, passage, or chapter.`);
     }
-    
-    if (!chapterFound) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Chapter ${args.chapter} not found in book ${bookId}`,
-          },
-        ],
-      };
-    }
-    
-    // Get the full chapter using the chapter ID
-    const chapterId = chapterFound.id;
-    const result = await client.getPassage(chapterId);
-    
-    if (!result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Chapter content not found: ${bookId} ${args.chapter}`,
-          },
-        ],
-      };
-    }
-    
-    const passageData = result.data;
-    const contentItems = passageData.content || [];
-    const content = extractTextFromContent(contentItems);
-    
-    const response = `**${passageData.reference}**\n${content}`;
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response,
-        },
-      ],
-    };
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error retrieving chapter ${args.book_id} ${args.chapter}: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return toolError(`Error: ${error instanceof Error ? error.message : String(error)}`, true);
   }
 }
 
-async function listBooks(client: BibleAPIClient): Promise<CallToolResult> {
-  try {
-    const result = await client.getBooks();
-    
-    if (!result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "No books found",
-          },
-        ],
-      };
-    }
-
-    const books = result.data;
-    let response = "**Bible Books:**\n\n";
-    
-    for (const book of books) {
-      response += `• **${book.name}** (${book.abbreviation}) - ID: ${book.id}\n`;
-    }
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response.trim(),
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error listing books: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function listChapters(
-  args: { book_id: string },
+async function handleBibleReference(
+  args: {
+    action: string;
+    book_id?: string;
+    response_format?: string;
+  },
   client: BibleAPIClient
 ): Promise<CallToolResult> {
-  try {
-    const bookId = args.book_id.toUpperCase();
-    
-    const result = await client.getChapters(bookId);
-    
-    if (!result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `No chapters found for book: ${bookId}`,
-          },
-        ],
-      };
-    }
+  const action = args.action;
+  const responseFormat = args.response_format || "concise";
+  const isDetailed = responseFormat === "detailed";
 
-    const chapters = result.data;
-    let response = `**Chapters in ${bookId}:**\n\n`;
-    
-    for (const chapter of chapters) {
-      if (chapter.number !== "intro") {
-        response += `• Chapter ${chapter.number} - ${chapter.reference}\n`;
+  try {
+    switch (action) {
+      case "list_books": {
+        const result = await client.getBooks();
+        if (!result.data) {
+          return toolResult("No books found");
+        }
+        const books = result.data;
+        let response = "**Bible Books:**\n\n";
+        for (const book of books) {
+          if (isDetailed) {
+            response += `• **${book.name}** (${book.abbreviation}) - ID: ${book.id}\n`;
+          } else {
+            response += `• **${book.name}** (${book.abbreviation})\n`;
+          }
+        }
+        return toolResult(response.trim());
       }
+
+      case "list_chapters": {
+        if (!args.book_id) {
+          return toolError("list_chapters action requires book_id");
+        }
+        const bookId = args.book_id.toUpperCase();
+        const result = await client.getChapters(bookId);
+        if (!result.data) {
+          return toolResult(`No chapters found for book: ${bookId}`);
+        }
+        const chapters = result.data;
+        let response = `**Chapters in ${bookId}:**\n\n`;
+        for (const chapter of chapters) {
+          if (chapter.number !== "intro") {
+            if (isDetailed) {
+              response += `• Chapter ${chapter.number} - ${chapter.reference}\n`;
+            } else {
+              response += `• Chapter ${chapter.number}\n`;
+            }
+          }
+        }
+        return toolResult(response.trim());
+      }
+
+      default:
+        return toolError(`Unknown action: ${action}. Use list_books or list_chapters.`);
     }
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: response.trim(),
-        },
-      ],
-    };
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error listing chapters: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return toolError(`Error: ${error instanceof Error ? error.message : String(error)}`, true);
   }
+}
+
+function toolResult(text: string): CallToolResult {
+  return {
+    content: [{ type: "text", text }],
+  };
+}
+
+function toolError(text: string, isError = true): CallToolResult {
+  return {
+    content: [{ type: "text", text }],
+    isError,
+  };
 }

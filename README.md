@@ -41,14 +41,31 @@ curl https://your-worker-domain.workers.dev/health
 
 ## Available Bible Tools
 
-Your MCP server provides these tools:
+Your MCP server provides two consolidated tools with multiple actions:
 
-1. **search_verses** - Search for Bible verses containing specific text
-2. **get_verse** - Get a specific Bible verse (e.g., GEN.1.1)  
-3. **get_passage** - Get Bible passages (e.g., GEN.1.1-GEN.1.5)
-4. **get_chapter** - Get all verses from a specific chapter
-5. **list_books** - Get a list of all Bible books with their IDs
-6. **list_chapters** - Get a list of chapters for a specific book
+### 1. **bible_content** (Bible Content)
+
+Read and search Bible verses. Use the `action` parameter to specify what to do:
+
+| Action | Description | Required Parameters |
+|--------|-------------|---------------------|
+| `search` | Find verses by text | `query` |
+| `verse` | Get a single verse (e.g., GEN.1.1, JHN.3.16) | `verse_id` |
+| `passage` | Get a verse range (e.g., GEN.1.1-GEN.1.5) | `passage_id` |
+| `chapter` | Get a full chapter | `book_id`, `chapter` |
+
+Optional: `response_format` — `concise` (default, essential info only) or `detailed` (full text with verse numbers). Use `detailed` when the user needs verse-by-verse structure.
+
+### 2. **bible_reference** (Bible Reference)
+
+Navigate Bible structure:
+
+| Action | Description | Required Parameters |
+|--------|-------------|---------------------|
+| `list_books` | List all Bible books with names and abbreviations | — |
+| `list_chapters` | List chapters for a book | `book_id` |
+
+Optional: `response_format` — `concise` (default) or `detailed` (includes IDs for follow-up tool calls).
 
 ## Common Bible Translations
 
