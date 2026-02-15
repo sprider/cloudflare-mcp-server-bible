@@ -17,19 +17,19 @@ npm install
 # Login to Cloudflare
 npx wrangler login
 
-# Set your API credentials (you'll be prompted to enter them securely)
+# Set your API key (you'll be prompted to enter it securely)
 npx wrangler secret put BIBLE_API_KEY
-npx wrangler secret put BIBLE_ID
-npx wrangler secret put BASE_URL
 
 # Deploy to Cloudflare Workers
 npx wrangler deploy
 ```
 
-**When prompted for secrets, enter:**
-- **BIBLE_API_KEY**: Your API key from scripture.api.bible
-- **BIBLE_ID**: `de4e12af7f28f599-02` (King James Version)
-- **BASE_URL**: `https://api.scripture.api.bible/v1`
+**Secrets:**
+- **BIBLE_API_KEY** (required): Your API key from scripture.api.bible
+
+**Optional configuration** (in `wrangler.toml` or `.dev.vars`):
+- **BIBLE_ID**: Bible translation ID (default: `de4e12af7f28f599-02` for KJV)
+- **BASE_URL**: Scripture API base URL (default: `https://api.scripture.api.bible/v1`)
 
 ### 3. Test Your Deployment
 ```bash
@@ -84,12 +84,6 @@ npm run dev
 # Deploy changes
 npm run deploy
 ```
-
-## Troubleshooting
-
-1. **Authentication Error**: Make sure you've run `npx wrangler login`
-2. **API Key Issues**: Verify your Scripture API key is valid and set correctly
-3. **Deployment Failed**: Check you have the correct permissions in Cloudflare
 
 ## Using Your MCP Server
 
@@ -152,7 +146,7 @@ Your Cloudflare Worker provides:
    - Make sure `mcp-remote` is installed globally: `npm install -g mcp-remote`
    - Restart Claude Desktop after adding the configuration
    - Check that your worker URL is correct in the config
-5. **MCP Tools Not Appearing**: Verify your API credentials are set correctly using `npx wrangler secret list`
+5. **MCP Tools Not Appearing**: Verify BIBLE_API_KEY is set correctly using `npx wrangler secret list`
 
 ## Testing Your Server
 

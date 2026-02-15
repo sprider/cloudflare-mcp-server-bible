@@ -47,9 +47,17 @@ export default {
     if (url.pathname === "/sse") {
       if (request.method === "GET") {
         return handleSSE(request, env);
-      } else if (request.method === "POST") {
+      }
+      if (request.method === "POST") {
         return handleMCP(request, env);
       }
+      return new Response("Method Not Allowed", {
+        status: 405,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          Allow: "GET, POST, OPTIONS",
+        },
+      });
     }
     
     return new Response("Bible MCP Server - Cloudflare Worker", { 
@@ -186,27 +194,38 @@ async function handleSSE(request: Request, env: Env): Promise<Response> {
   
   // Handle the SSE connection
   const handleConnection = async () => {
+    const closeWriter = () => writer.close().catch(() => {});
+    let keepAlive: ReturnType<typeof setInterval> | null = null;
+
+    const cleanup = () => {
+      if (keepAlive) {
+        clearInterval(keepAlive);
+        keepAlive = null;
+      }
+      closeWriter();
+    };
+
     try {
       // According to MCP spec, SSE should establish connection and wait for messages
       // Don't send anything initially - the client will send requests via a separate channel
-      
+
       // Keep the connection alive with periodic comments (SSE spec)
-      const keepAlive = setInterval(async () => {
+      keepAlive = setInterval(async () => {
         try {
           await writer.write(encoder.encode(": keepalive\n\n"));
         } catch (e) {
-          clearInterval(keepAlive);
+          cleanup();
         }
       }, 30000);
-      
+
       // Clean up on abort
-      request.signal?.addEventListener('abort', () => {
-        clearInterval(keepAlive);
-        writer.close();
-      });
-      
+      request.signal?.addEventListener("abort", cleanup);
+
+      // Clean up when stream/writer closes
+      writer.closed.then(cleanup).catch(() => cleanup());
     } catch (error) {
-      writer.close();
+      console.error("SSE connection error:", error);
+      cleanup();
     }
   };
   
@@ -344,8 +363,11 @@ async function handleMCP(request: Request, env: Env): Promise<Response> {
         });
 
       case "tools/call":
-        const toolName = body.params?.name;
-        const toolArgs = body.params?.arguments || {};
+        if (!body.params || typeof body.params.name !== "string" || !body.params.name.trim()) {
+          return createErrorResponse(body.id, -32602, "Invalid params: missing tool name");
+        }
+        const toolName = body.params.name;
+        const toolArgs = body.params.arguments || {};
 
         try {
           let result;
